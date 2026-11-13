@@ -75,7 +75,8 @@ function scheduleWindow(dayK) {
   const base = parseDay(dayK), sch = schedule[base.getDay()];
   if (!sch || daysOff.has(dayK)) return null;
   const at = hhmm => { const [h, m] = hhmm.split(':').map(Number); return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m); };
-  return { from: at(sch[0]), to: at(sch[1]), label: `${sch[0]}–${sch[1]}` };
+  const brk = sch[2] || 0;
+  return { from: at(sch[0]), to: at(sch[1]), brk, label: `${sch[0]}–${sch[1]}` };
 }
 // Tipo de día y horas esperadas según horario y días libres
 function dayType(dayK) {
@@ -84,7 +85,7 @@ function dayType(dayK) {
 }
 function expectedMs(dayK) {
   const w = scheduleWindow(dayK);
-  return w ? w.to - w.from : 0;
+  return w ? Math.max(0, (w.to - w.from) - w.brk * 60000) : 0; // franja menos descanso no computable
 }
 // Duración con signo: +1:20 / -0:35
 function signedHM(ms) {
@@ -471,6 +472,9 @@ function renderCalendar() {
   $('cal-count').textContent = `${nMonth} en este mes · ${nYear} día${nYear === 1 ? '' : 's'} libre${nYear === 1 ? '' : 's'} en ${yr}`;
 }
 
+const BREAK_OPTIONS = [0, 15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
+const minutesBetween = (a, b) => { const [ah, am] = a.split(':').map(Number), [bh, bm] = b.split(':').map(Number); return (bh * 60 + bm) - (ah * 60 + am); };
+
 function renderSchedule() {
   const box = $('schedule-edit');
   box.innerHTML = '';
@@ -482,18 +486,28 @@ function renderSchedule() {
       <button type="button" class="sch-day">${WEEK_NAMES[wd]}<small>${sch ? 'laborable' : 'libre'}</small></button>
       ${timePickerHTML('sch-from', sch ? sch[0] : '09:00', 5, !sch)}
       <span class="sch-sep">→</span>
-      ${timePickerHTML('sch-to', sch ? sch[1] : '18:00', 5, !sch)}`;
+      ${timePickerHTML('sch-to', sch ? sch[1] : '18:00', 5, !sch)}
+      <label class="sch-break">☕ Descanso no computable
+        <select class="sch-brk"${sch ? '' : ' disabled'}>${BREAK_OPTIONS.map(m => `<option value="${m}"${m === ((sch && sch[2]) || 0) ? ' selected' : ''}>${m ? hm(m * 60000) : 'ninguno'}</option>`).join('')}</select>
+        <span class="sch-exp">${sch ? `→ ${hm(Math.max(0, minutesBetween(sch[0], sch[1]) - (sch[2] || 0)) * 60000)} esperadas` : ''}</span>
+      </label>`;
     row.querySelector('.sch-day').onclick = () => {
       schedule[wd] = sch ? null : DEFAULT_SCHEDULE[1].slice();
       save(K_SCHEDULE, schedule); renderSchedule(); renderCalendar();
     };
     const onChange = () => {
       const f = tpGet(row.querySelector('.sch-from')), t = tpGet(row.querySelector('.sch-to'));
-      if (f && t && f < t) { schedule[wd] = [f, t]; save(K_SCHEDULE, schedule); toast(`${WEEK_NAMES[wd]}: ${f}–${t}`); }
-      else toast('El inicio tiene que ser antes del fin');
+      const brk = Number(row.querySelector('.sch-brk').value);
+      if (!(f < t)) { toast('El inicio tiene que ser antes del fin'); return; }
+      if (brk >= minutesBetween(f, t)) { toast('El descanso no puede ocupar toda la franja'); return; }
+      schedule[wd] = brk ? [f, t, brk] : [f, t];
+      save(K_SCHEDULE, schedule);
+      row.querySelector('.sch-exp').textContent = `→ ${hm((minutesBetween(f, t) - brk) * 60000)} esperadas`;
+      toast(`${WEEK_NAMES[wd]}: ${f}–${t}${brk ? ` · descanso ${hm(brk * 60000)}` : ''}`);
     };
     row.querySelector('.sch-from').onchange = onChange;
     row.querySelector('.sch-to').onchange = onChange;
+    row.querySelector('.sch-brk').onchange = onChange;
     box.appendChild(row);
   }
 }
@@ -549,14 +563,14 @@ function exportSummary() {
   // para que el esperado vs. efectivo cuadre.
   const map = buildDays();
   const keys = [...map.keys()].sort();
-  const rows = [['fecha', 'dia_semana', 'tipo_dia', 'horario', 'esperado_hhmm', 'esperado_min', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'diferencia_hhmm', 'diferencia_min', 'inicio', 'fin', 'pausas', 'sesiones', 'motivos', 'antes_min', 'despues_min', 'fuera_horario_min']];
+  const rows = [['fecha', 'dia_semana', 'tipo_dia', 'horario', 'descanso_min', 'esperado_hhmm', 'esperado_min', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'diferencia_hhmm', 'diferencia_min', 'inicio', 'fin', 'pausas', 'sesiones', 'motivos', 'antes_min', 'despues_min', 'fuera_horario_min']];
   if (keys.length) {
     const today = dayKey(new Date());
     for (let dt = parseDay(keys[0]); dayKey(dt) <= today; dt.setDate(dt.getDate() + 1)) {
       const k = dayKey(dt), d = map.get(k), win = scheduleWindow(k), exp = expectedMs(k);
       const work = d ? d.work : 0, paused = d ? d.paused : 0;
       rows.push([
-        ddmmyyyy(dt), fmtWeekday.format(dt), dayType(k), win ? win.label : '',
+        ddmmyyyy(dt), fmtWeekday.format(dt), dayType(k), win ? win.label : '', win ? win.brk : 0,
         hm(exp), Math.round(exp / 60000), hm(work), Math.round(work / 60000), hm(paused), Math.round(paused / 60000),
         signedHM(work - exp), Math.round(work / 60000) - Math.round(exp / 60000),
         d ? clock(d.start) : '', d && !d.open ? clock(d.end) : '', d ? d.pauses : 0, d ? d.sessions.length : 0,
@@ -696,6 +710,27 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ev
 
 applyTheme();
 show('today');
+
+// ---------- Sugerir instalación (Chrome Android) ----------
+let installPrompt = null;
+const K_INSTALL_DISMISSED = 'busy.installDismissed';
+function updateInstallUI() {
+  const can = !!installPrompt;
+  $('install').hidden = !can || load(K_INSTALL_DISMISSED, false);
+  $('install-settings-wrap').hidden = !can;
+}
+async function doInstall() {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice;
+  if (outcome === 'accepted') installPrompt = null;
+  updateInstallUI();
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; updateInstallUI(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; updateInstallUI(); toast('✅ Busy instalada'); });
+$('install-btn').addEventListener('click', doInstall);
+$('install-settings').addEventListener('click', doInstall);
+$('install-x').addEventListener('click', () => { save(K_INSTALL_DISMISSED, true); updateInstallUI(); toast('Puedes instalarla luego desde Ajustes'); });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));

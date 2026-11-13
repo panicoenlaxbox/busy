@@ -24,6 +24,12 @@
         <button id="undo-btn" class="undo" hidden>↶ Deshacer</button>
       </header>
 
+      <div id="install" class="install" hidden>
+        <span>📲 Instala Busy como app</span>
+        <button type="button" id="install-btn">Instalar</button>
+        <button type="button" id="install-x" aria-label="Ahora no">✕</button>
+      </div>
+
       <div id="stale" class="stale" hidden>
         <div class="stale-title">⚠️ Jornada sin cerrar</div>
         <div class="stale-text" id="stale-text"></div>
@@ -71,6 +77,11 @@
         <button data-theme-opt="auto">🌓 Auto</button>
         <button data-theme-opt="light">☀️ Claro</button>
         <button data-theme-opt="dark">🌙 Oscuro</button>
+      </div>
+
+      <div id="install-settings-wrap" hidden>
+        <h2>App</h2>
+        <button class="btn btn-big btn-neutral" id="install-settings">📲 Instalar Busy en este dispositivo</button>
       </div>
 
       <h2>Horario</h2>

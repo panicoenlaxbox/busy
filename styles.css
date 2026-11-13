@@ -211,7 +211,11 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .day-sched .out { background: var(--out-bg); color: var(--out-fg); }
 .day-sched .in { color: var(--muted); padding-left: 0; }
 .schedule-edit { display: flex; flex-direction: column; gap: 8px; }
-.sch-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
+.sch-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.sch-break { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--muted); font-weight: 600; }
+.sch-break select { min-height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); font-size: 16px; font-weight: 700; padding: 0 10px; font-family: inherit; }
+.sch-exp { margin-left: auto; color: var(--text); font-weight: 700; }
+.sch-row.off .sch-break { opacity: .35; }
 .sch-day { text-align: left; min-height: 52px; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 14px; padding: 0 12px; font-weight: 700; font-size: 16px; display: flex; flex-direction: column; justify-content: center; }
 .sch-day small { font-weight: 500; color: var(--muted); font-size: 12px; }
 .sch-row .tp select { min-height: 52px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); font-size: 17px; min-width: 52px; }
@@ -259,3 +263,11 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .remaining { text-align: center; margin: 10px auto 0; font-size: 17px; font-weight: 500; opacity: .95; }
 .remaining b { font-weight: 800; font-variant-numeric: tabular-nums; }
 .remaining.met { display: table; background: rgba(255,255,255,.22); padding: 6px 16px; border-radius: 999px; font-weight: 700; }
+
+/* Aviso de instalación */
+.install { display: flex; align-items: center; gap: 8px; margin-top: 10px; background: rgba(255,255,255,.2); border-radius: 16px; padding: 8px 8px 8px 14px; font-weight: 600; font-size: 15px; }
+.install[hidden] { display: none; }
+.install span { flex: 1; }
+.install button { border: 0; border-radius: 12px; min-height: 44px; font-weight: 800; }
+#install-btn { background: #fff; color: var(--state); padding: 0 16px; font-size: 16px; }
+#install-x { background: transparent; color: #fff; width: 44px; font-size: 18px; }
