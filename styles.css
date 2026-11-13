@@ -133,7 +133,9 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .stale-title { font-size: 22px; font-weight: 800; }
 .stale-text { margin: 8px 0 14px; font-size: 16px; }
 .stale-label { display: block; font-size: 16px; font-weight: 600; }
-.stale-label input { display: block; width: 100%; margin-top: 8px; font-size: 28px; padding: 10px 14px; border-radius: 14px; border: 0; }
+.stale-label .tp { margin-top: 8px; display: flex; }
+.stale-label .tp select { font-size: 28px; min-height: 64px; min-width: 96px; border: 0; background: #fff; color: #0f172a; }
+.stale-label .tp b { font-size: 28px; }
 .stale-error { color: #fee2e2; font-weight: 700; min-height: 22px; margin: 8px 0; }
 .stale .btn-main { min-height: 80px; font-size: 24px; }
 
@@ -212,7 +214,13 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .sch-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
 .sch-day { text-align: left; min-height: 52px; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 14px; padding: 0 12px; font-weight: 700; font-size: 16px; display: flex; flex-direction: column; justify-content: center; }
 .sch-day small { font-weight: 500; color: var(--muted); font-size: 12px; }
-.sch-row input { min-height: 52px; border-radius: 14px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); padding: 0 8px; font-size: 16px; width: 124px; }
+.sch-row .tp select { min-height: 52px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); font-size: 17px; min-width: 52px; }
 .sch-row.off .sch-day { background: transparent; border-style: dashed; color: var(--muted); }
-.sch-row.off input { opacity: .35; }
+.sch-row.off .tp { opacity: .35; }
 .sch-sep { color: var(--muted); }
+
+/* Selector de hora propio (24 h fijo) */
+.tp { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
+.tp b { font-weight: 800; padding: 0 1px; }
+.tp select { appearance: none; -webkit-appearance: none; border-radius: 12px; padding: 0 8px; text-align: center; text-align-last: center; font-weight: 700; font-family: inherit; cursor: pointer; }
+.tp select:disabled { cursor: default; }

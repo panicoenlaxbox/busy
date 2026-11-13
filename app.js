@@ -42,9 +42,25 @@ function human(ms) {
 }
 const minutesOfDay = d => d.getHours() * 60 + d.getMinutes();
 const fromMinutes = m => `${pad(Math.floor(m / 60))}:${pad(Math.round(m) % 60)}`;
-const fmtLongDate = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-const fmtShortDate = new Intl.DateTimeFormat('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
-const fmtWeekday = new Intl.DateTimeFormat('es-ES', { weekday: 'long' });
+// Formatos fijos, independientes de la configuración del móvil: dd/mm/yyyy y 24 h
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const ddmmyyyy = d => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const fmtLongDate = { format: d => `${cap(WEEKDAYS[d.getDay()])} ${ddmmyyyy(d)}` };
+const fmtShortDate = { format: d => `${cap(WEEKDAYS[d.getDay()].slice(0, 3))} ${ddmmyyyy(d)}` };
+const fmtWeekday = { format: d => WEEKDAYS[d.getDay()] };
+
+// Selector de hora propio (00–23 : 00–59), sin depender del formato 12/24 h del sistema
+function timePickerHTML(cls, value, step = 1, disabled = false) {
+  const [vh, vm] = (value || '00:00').split(':');
+  const hours = Array.from({ length: 24 }, (_, i) => pad(i));
+  const mins = Array.from({ length: 60 / step }, (_, i) => pad(i * step));
+  if (!mins.includes(vm)) { mins.push(vm); mins.sort(); }
+  const opts = (list, v) => list.map(x => `<option${x === v ? ' selected' : ''}>${x}</option>`).join('');
+  const dis = disabled ? ' disabled' : '';
+  return `<span class="tp ${cls}"><select class="tp-h"${dis}>${opts(hours, vh)}</select><b>:</b><select class="tp-m"${dis}>${opts(mins, vm)}</select></span>`;
+}
+const tpGet = el => `${el.querySelector('.tp-h').value}:${el.querySelector('.tp-m').value}`;
 const parseDay = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
 
 const LABEL = { start: 'Empiezo', pause: 'Pausa', resume: 'Reanudo', end: 'Fin' };
@@ -242,10 +258,10 @@ function renderToday() {
   $('today-main').hidden = !!stale;
   if (stale) {
     const lastT = new Date(open.events[open.events.length - 1].ts);
-    $('stale-text').textContent = `La jornada del ${fmtLongDate.format(open.start)} empezó a las ${clock(open.start)} y no se finalizó. Último registro: ${LABEL[open.events[open.events.length - 1].type].toLowerCase()} a las ${clock(lastT)}.`;
+    $('stale-text').textContent = `La jornada del ${fmtLongDate.format(open.start).toLowerCase()} empezó a las ${clock(open.start)} y no se finalizó. Último registro: ${LABEL[open.events[open.events.length - 1].type].toLowerCase()} a las ${clock(lastT)}.`;
     const inp = $('stale-time');
-    if (!inp.dataset.for || inp.dataset.for !== open.events[0].ts) {
-      inp.value = clock(lastT); inp.dataset.for = open.events[0].ts; $('stale-error').textContent = '';
+    if (inp.dataset.for !== open.events[0].ts) {
+      inp.innerHTML = timePickerHTML('', clock(lastT)); inp.dataset.for = open.events[0].ts; $('stale-error').textContent = '';
     }
     $('actions').innerHTML = ''; $('actions').dataset.state = 'stale';
     document.body.dataset.state = 'paused';
@@ -369,15 +385,15 @@ function renderSchedule() {
     row.className = 'sch-row' + (sch ? '' : ' off');
     row.innerHTML = `
       <button type="button" class="sch-day">${WEEK_NAMES[wd]}<small>${sch ? 'laborable' : 'libre'}</small></button>
-      <input type="time" class="sch-from" ${sch ? `value="${sch[0]}"` : 'disabled'}>
+      ${timePickerHTML('sch-from', sch ? sch[0] : '09:00', 5, !sch)}
       <span class="sch-sep">→</span>
-      <input type="time" class="sch-to" ${sch ? `value="${sch[1]}"` : 'disabled'}>`;
+      ${timePickerHTML('sch-to', sch ? sch[1] : '18:00', 5, !sch)}`;
     row.querySelector('.sch-day').onclick = () => {
       schedule[wd] = sch ? null : DEFAULT_SCHEDULE[1].slice();
       save(K_SCHEDULE, schedule); renderSchedule();
     };
     const onChange = () => {
-      const f = row.querySelector('.sch-from').value, t = row.querySelector('.sch-to').value;
+      const f = tpGet(row.querySelector('.sch-from')), t = tpGet(row.querySelector('.sch-to'));
       if (f && t && f < t) { schedule[wd] = [f, t]; save(K_SCHEDULE, schedule); toast(`${WEEK_NAMES[wd]}: ${f}–${t}`); }
       else toast('El inicio tiene que ser antes del fin');
     };
@@ -436,7 +452,7 @@ function exportSummary() {
   const days = [...buildDays().values()].sort((a, b) => a.day.localeCompare(b.day));
   const rows = [['fecha', 'dia_semana', 'inicio', 'fin', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'pausas', 'sesiones', 'motivos', 'horario', 'antes_min', 'despues_min', 'fuera_horario_min']];
   for (const d of days) rows.push([
-    d.day, fmtWeekday.format(parseDay(d.day)), clock(d.start), d.open ? '' : clock(d.end),
+    ddmmyyyy(parseDay(d.day)), fmtWeekday.format(parseDay(d.day)), clock(d.start), d.open ? '' : clock(d.end),
     hm(d.work), Math.round(d.work / 60000), hm(d.paused), Math.round(d.paused / 60000),
     d.pauses, d.sessions.length,
     Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(', '),
@@ -450,7 +466,7 @@ function exportEvents() {
   const sessions = buildSessions();
   for (const s of sessions) for (const e of s.events) {
     const t = new Date(e.ts);
-    rows.push([s.day, `${clock(t)}:${pad(t.getSeconds())}`, LABEL[e.type], e.reason || '', e.ts]);
+    rows.push([ddmmyyyy(parseDay(s.day)), `${clock(t)}:${pad(t.getSeconds())}`, LABEL[e.type], e.reason || '', e.ts]);
   }
   deliver(`busy_eventos_${stamp()}.csv`, csv(rows), 'text/csv');
 }
@@ -508,7 +524,7 @@ $('sheet-form').addEventListener('submit', e => { e.preventDefault(); setReason(
 $('stale-close').addEventListener('click', () => {
   const open = currentSession();
   if (!open) return render();
-  const [h, m] = ($('stale-time').value || '').split(':').map(Number);
+  const [h, m] = tpGet($('stale-time')).split(':').map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) { $('stale-error').textContent = 'Pon una hora.'; return; }
   const lastT = new Date(open.events[open.events.length - 1].ts);
   // La hora se interpreta en el día del último registro (o el siguiente si es anterior)
