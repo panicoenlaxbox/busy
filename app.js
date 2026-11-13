@@ -241,9 +241,7 @@ function sheetValue() {
   return v;
 }
 function updateSheetOk() {
-  const txt = eventText(sheetValue());
-  $('sheet-ok').disabled = !txt;
-  $('sheet-ok').textContent = txt ? `✅ Guardar · ${txt}` : '✅ Guardar';
+  $('sheet-ok').disabled = !eventText(sheetValue());
 }
 function closeSheet() { $('sheet').hidden = true; sheetFor = null; }
 function setReason(v) {
@@ -252,7 +250,6 @@ function setReason(v) {
     if (v.reasons.length) sheetFor.reasons = v.reasons;
     if (v.note) sheetFor.note = v.note;
     save(K_EVENTS, events);
-    toast(`Anotado: ${eventText(v)}`);
   }
   closeSheet();
   render();
