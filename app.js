@@ -20,7 +20,7 @@ function save(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { toast('⚠️ No se pudo guardar'); }
 }
 
-let events = load(K_EVENTS, []);   // [{ts: ISO, type: start|pause|resume|end, reason?}]
+let events = load(K_EVENTS, []);   // [{ts: ISO, type: start|pause|resume|end, reasons?: [motivos rápidos], note?: texto libre}]
 let reasons = load(K_REASONS, DEFAULT_REASONS.slice());
 let schedule = load(K_SCHEDULE, DEFAULT_SCHEDULE);
 let daysOff = new Set(load(K_DAYSOFF, []));   // fechas 'YYYY-MM-DD' marcadas como libres
@@ -119,7 +119,7 @@ function buildSessions(now = new Date()) {
       seg.to = t; cur.segs.push(seg);
       seg = { t: 'p', from: t };
       cur.pauses++;
-      if (e.reason) cur.reasons.push(...splitReasons(e.reason));
+      cur.reasons.push(...eventTags(e));
     } else if (e.type === 'resume') {
       seg.to = t; cur.segs.push(seg);
       seg = { t: 'w', from: t };
@@ -214,8 +214,9 @@ const $ = id => document.getElementById(id);
 const escapeHTML = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let sheetFor = null;
 const sheetSel = new Set(); // motivos rápidos marcados en la hoja
-// Varios motivos se guardan en un solo texto separado por comas
-const splitReasons = r => String(r).split(',').map(x => x.trim()).filter(Boolean);
+// Motivos de un evento: lista de motivos rápidos + nota libre
+const eventTags = e => [...(e.reasons || []), ...(e.note ? [e.note] : [])];
+const eventText = e => eventTags(e).join(' · ');
 
 function openSheet(type) {
   sheetFor = events[events.length - 1];
@@ -234,21 +235,24 @@ function openSheet(type) {
   $('sheet').hidden = false;
 }
 function sheetValue() {
-  const txt = $('sheet-input').value.trim();
-  return [...reasons.filter(r => sheetSel.has(r)), ...(txt ? [txt] : [])].join(', ');
+  const note = $('sheet-input').value.trim();
+  const v = { reasons: reasons.filter(r => sheetSel.has(r)) };
+  if (note) v.note = note;
+  return v;
 }
 function updateSheetOk() {
-  const v = sheetValue();
-  $('sheet-ok').disabled = !v;
-  $('sheet-ok').textContent = v ? `✅ Guardar · ${v}` : '✅ Guardar';
+  const txt = eventText(sheetValue());
+  $('sheet-ok').disabled = !txt;
+  $('sheet-ok').textContent = txt ? `✅ Guardar · ${txt}` : '✅ Guardar';
 }
 function closeSheet() { $('sheet').hidden = true; sheetFor = null; }
-function setReason(r) {
-  r = r.trim();
-  if (r && sheetFor) {
-    sheetFor.reason = r;
+function setReason(v) {
+  if (sheetFor && eventText(v)) {
+    delete sheetFor.reasons; delete sheetFor.note;
+    if (v.reasons.length) sheetFor.reasons = v.reasons;
+    if (v.note) sheetFor.note = v.note;
     save(K_EVENTS, events);
-    toast(`Anotado: ${r}`);
+    toast(`Anotado: ${eventText(v)}`);
   }
   closeSheet();
   render();
@@ -344,7 +348,7 @@ function renderToday() {
   if (state === 'paused') {
     const p = events[events.length - 1], pt = new Date(p.ts);
     pi.hidden = false;
-    pi.textContent = `En pausa desde ${clock(pt)} · ${human(now - pt)}${p.reason ? ' · ' + p.reason : ''}`;
+    pi.textContent = `En pausa desde ${clock(pt)} · ${human(now - pt)}${eventText(p) ? ' · ' + eventText(p) : ''}`;
   } else if (state === 'done' && day) {
     pi.hidden = false;
     pi.textContent = `De ${clock(day.start)} a ${clock(day.end)}`;
@@ -359,8 +363,8 @@ function renderToday() {
     const evs = day.sessions.flatMap(s => s.events).slice().reverse();
     for (const e of evs) {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="t">${clock(new Date(e.ts))}</span><span>${ICON[e.type]} ${LABEL[e.type]}</span>${e.reason ? `<span class="r"></span>` : ''}`;
-      if (e.reason) li.querySelector('.r').textContent = e.reason;
+      li.innerHTML = `<span class="t">${clock(new Date(e.ts))}</span><span>${ICON[e.type]} ${LABEL[e.type]}</span>${eventText(e) ? `<span class="r"></span>` : ''}`;
+      if (eventText(e)) li.querySelector('.r').textContent = eventText(e);
       list.appendChild(li);
     }
   }
@@ -604,7 +608,7 @@ function exportSummary() {
         hm(exp), Math.round(exp / 60000), hm(work), Math.round(work / 60000), hm(paused), Math.round(paused / 60000),
         signedHM(work - exp), Math.round(work / 60000) - Math.round(exp / 60000),
         d ? clock(d.start) : '', d && !d.open ? clock(d.end) : '', d ? d.pauses : 0, d ? d.sessions.length : 0,
-        d ? Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(', ') : '',
+        d ? Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(' | ') : '',
         d ? Math.round(d.early / 60000) : 0, d ? Math.round(d.late / 60000) : 0, d ? Math.round(d.out / 60000) : 0,
       ]);
     }
@@ -613,11 +617,11 @@ function exportSummary() {
 }
 
 function exportEvents() {
-  const rows = [['fecha', 'hora', 'evento', 'motivo', 'timestamp']];
+  const rows = [['fecha', 'hora', 'evento', 'motivos', 'nota', 'timestamp']];
   const sessions = buildSessions();
   for (const s of sessions) for (const e of s.events) {
     const t = new Date(e.ts);
-    rows.push([ddmmyyyy(parseDay(s.day)), `${clock(t)}:${pad(t.getSeconds())}`, LABEL[e.type], e.reason || '', e.ts]);
+    rows.push([ddmmyyyy(parseDay(s.day)), `${clock(t)}:${pad(t.getSeconds())}`, LABEL[e.type], (e.reasons || []).join(' | '), e.note || '', e.ts]);
   }
   deliver(`busy_eventos_${stamp()}.csv`, csv(rows), 'text/csv');
 }
@@ -671,7 +675,7 @@ $('actions').addEventListener('click', e => { const b = e.target.closest('[data-
 $('undo-btn').addEventListener('click', undo);
 $('sheet-skip').addEventListener('click', () => { closeSheet(); render(); });
 $('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') { closeSheet(); render(); } });
-$('sheet-form').addEventListener('submit', e => { e.preventDefault(); const v = sheetValue(); if (v) setReason(v); });
+$('sheet-form').addEventListener('submit', e => { e.preventDefault(); setReason(sheetValue()); });
 $('sheet-input').addEventListener('input', updateSheetOk);
 
 $('stale-close').addEventListener('click', () => {
