@@ -271,3 +271,24 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .install button { border: 0; border-radius: 12px; min-height: 44px; font-weight: 800; }
 #install-btn { background: #fff; color: var(--state); padding: 0 16px; font-size: 16px; }
 #install-x { background: transparent; color: #fff; width: 44px; font-size: 18px; }
+
+/* Visor de días */
+.day-viewer { margin-top: 18px; }
+.day-viewer[hidden] { display: none; }
+.day-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.day-nav span { font-weight: 800; font-size: 18px; }
+.day-nav button { width: 56px; height: 48px; border: 0; border-radius: 14px; background: var(--card); border: 1px solid var(--line); color: var(--text); font-size: 18px; }
+.day-nav button:disabled { opacity: .3; }
+.day-viewer .day { margin-top: 10px; }
+#days h2 small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.day-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; width: 100%; min-height: 52px; margin-top: 6px; padding: 0 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; color: var(--text); font-size: 15px; text-align: left; }
+.day-row.sel { border: 2px solid var(--text); }
+.dr-date { font-weight: 700; }
+.dr-work { font-weight: 700; font-variant-numeric: tabular-nums; }
+.dr-work small { color: var(--muted); font-weight: 500; }
+.day-row .diff { margin-left: 0; min-width: 72px; text-align: center; }
+/* Borrado */
+.reset-choice { display: flex; flex-direction: column; gap: 10px; }
+.reset-choice[hidden] { display: none; }
+.reset-choice .btn small { display: block; font-size: 13px; font-weight: 500; opacity: .85; margin-top: 2px; }
+.reset-choice .btn { padding-top: 10px; padding-bottom: 10px; }

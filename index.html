@@ -65,6 +65,15 @@
     <section id="view-summary" class="view">
       <h1>Resumen</h1>
       <div class="avg" id="avg"></div>
+      <div id="day-viewer" class="day-viewer">
+        <div class="day-nav">
+          <button type="button" id="day-prev" aria-label="Día anterior">◀</button>
+          <span id="day-title">Hoy</span>
+          <button type="button" id="day-next" aria-label="Día siguiente">▶</button>
+        </div>
+        <div id="day-detail"></div>
+      </div>
+      <input type="hidden" id="day-nav-keys">
       <div id="days"></div>
     </section>
 
@@ -116,7 +125,13 @@
       </div>
 
       <h2>Peligro</h2>
-      <button class="btn btn-big btn-danger" id="reset">🗑️ Borrar todos los registros</button>
+      <button class="btn btn-big btn-danger" id="reset">🗑️ Borrar…</button>
+      <div class="reset-choice" id="reset-choice" hidden>
+        <p class="hint">¿Qué quieres borrar? No se puede deshacer.</p>
+        <button class="btn btn-big btn-danger" id="reset-events">🧹 Solo los registros<small>Mantiene horario, días libres, motivos y tema</small></button>
+        <button class="btn btn-big btn-danger armed" id="reset-all">💣 Todo<small>Registros y configuración: vuelve a los valores por defecto</small></button>
+        <button class="btn btn-big btn-neutral" id="reset-cancel">Cancelar</button>
+      </div>
       <p class="hint" id="data-count"></p>
     </section>
   </main>

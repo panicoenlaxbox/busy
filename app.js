@@ -211,6 +211,7 @@ function undo() {
 
 // ---------- Hoja de motivos ----------
 const $ = id => document.getElementById(id);
+const escapeHTML = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let sheetFor = null;
 
 function openSheet(type) {
@@ -311,14 +312,14 @@ function renderToday() {
   else {
     rem.hidden = false;
     if (left > 0) {
-      const leftTxt = left >= 60000 ? hm(left) : '<1 min';
+      const leftTxt = hms(left + 999); // redondeo hacia arriba para no mostrar 0:00:00 antes de tiempo
       if (state === 'working') rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> · podrías parar a las <b>${clock(new Date(now.getTime() + left))}</b>`;
       else if (state === 'paused') rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> al volver`;
       else if (state === 'done') rem.innerHTML = `Te faltaron <b>${hm(left)}</b>`;
       else rem.innerHTML = `⏳ Hoy toca <b>${hm(exp)}</b>`;
     } else {
       rem.classList.add('met');
-      rem.innerHTML = `✅ Jornada cumplida${-left >= 60000 ? ` · <b>+${hm(-left)}</b> extra` : ''}`;
+      rem.innerHTML = `✅ Jornada cumplida${-left >= 1000 ? ` · <b>+${hms(-left)}</b> extra` : ''}`;
     }
   }
   $('st-paused').textContent = hm(day ? day.paused : 0);
@@ -363,58 +364,19 @@ function renderToday() {
 }
 
 // ---------- Render: Resumen ----------
-function renderSummary() {
-  const now = new Date();
-  const map = buildDays(now);
-  const avg = $('avg'), box = $('days');
-  if (!map.size) {
-    avg.innerHTML = '';
-    box.innerHTML = '<div class="empty">Aún no hay jornadas.<br>Empieza una desde la pestaña Hoy.</div>';
-    return;
+let selectedDay = null; // día visible en Resumen (por defecto, hoy)
+
+function dayCardHTML({ k, d, exp }, todayK) {
+  const work = d ? d.work : 0, diff = work - exp;
+  const live = k === todayK && (!d || d.open);
+  const diffChip = exp || work ? `<span class="diff ${live ? 'live' : diff >= 0 ? 'pos' : 'neg'}">${live ? 'en curso' : signedHM(diff)}</span>` : '';
+  const head = `<div class="day-head"><span class="day-name">${fmtShortDate.format(parseDay(k))}</span><span class="day-eff">${hm(work)}<small> / ${hm(exp)}</small></span></div>`;
+  if (!d) {
+    const what = exp ? 'Sin registros' : (daysOff.has(k) ? '🏖️ Día libre · sin registros' : 'Sin horario · sin registros');
+    return `<div class="card day empty-day">${head}<div class="day-meta"><span>${what}</span>${diffChip}</div></div>`;
   }
-  // Todos los días desde el primer registro hasta hoy: los trabajados y los laborables sin registros
-  const todayK = dayKey(now);
-  const all = [];
-  for (let dt = parseDay([...map.keys()].sort()[0]); dayKey(dt) <= todayK; dt.setDate(dt.getDate() + 1)) {
-    const k = dayKey(dt), d = map.get(k), exp = expectedMs(k);
-    if (d || exp) all.push({ k, d, exp });
-  }
-  all.reverse();
-
-  // El balance solo cuenta días cerrados: hoy entra cuando la jornada ha terminado
-  const counted = all.filter(x => x.k !== todayK || (x.d && !x.d.open));
-  const totWork = counted.reduce((a, x) => a + (x.d ? x.d.work : 0), 0);
-  const totExp = counted.reduce((a, x) => a + x.exp, 0);
-  const bal = totWork - totExp;
-
-  const days = all.filter(x => x.d).map(x => x.d);
-  const closed = days.filter(d => !d.open);
-  const mean = arr => arr.reduce((x, y) => x + y, 0) / (arr.length || 1);
-  const card = (big, label, cls = '') => `<div class="card ${cls}"><div class="big">${big}</div><small>${label}</small></div>`;
-  avg.innerHTML =
-    card(hm(totWork), 'efectivo total') +
-    card(hm(totExp), 'esperado total') +
-    card(signedHM(bal), bal >= 0 ? 'balance · por encima de lo esperado' : 'balance · por debajo de lo esperado', 'wide ' + (bal >= 0 ? 'pos' : 'neg')) +
-    card(closed.length ? hm(mean(closed.map(d => d.paused))) : '—', 'pausa media / día') +
-    card(closed.length ? hm(mean(closed.map(d => d.work))) : '—', 'efectivo medio / día') +
-    card(fromMinutes(mean(days.map(d => minutesOfDay(d.start)))), 'inicio medio') +
-    card(closed.length ? fromMinutes(mean(closed.map(d => minutesOfDay(d.end)))) : '—', 'fin medio');
-
-  box.innerHTML = `<div class="legend"><span><i style="background:#4ade80"></i>trabajo</span><span><i style="background:#fbbf24"></i>pausa</span><span>${days.length} día${days.length === 1 ? '' : 's'} trabajado${days.length === 1 ? '' : 's'}</span></div>`;
-  for (const { k, d, exp } of all) {
-    const el = document.createElement('div');
-    const work = d ? d.work : 0, diff = work - exp;
-    const live = k === todayK && (!d || d.open);
-    const diffChip = exp || work ? `<span class="diff ${live ? 'live' : diff >= 0 ? 'pos' : 'neg'}">${live ? 'en curso' : signedHM(diff)}</span>` : '';
-    const head = `<div class="day-head"><span class="day-name">${fmtShortDate.format(parseDay(k))}</span><span class="day-eff">${hm(work)}<small> / ${hm(exp)}</small></span></div>`;
-    if (!d) {
-      el.className = 'card day empty-day';
-      el.innerHTML = `${head}<div class="day-meta"><span>Sin registros</span>${diffChip}</div>`;
-      box.appendChild(el);
-      continue;
-    }
-    el.className = 'card day';
-    el.innerHTML = `
+  const reasons = Object.entries(d.reasonCount).map(([r, n]) => `<span>${escapeHTML(n > 1 ? `${r} ×${n}` : r)}</span>`).join('');
+  return `<div class="card day">
       ${head}
       ${timelineHTML(d)}
       <div class="day-meta">
@@ -424,15 +386,69 @@ function renderSummary() {
         ${diffChip}
       </div>
       <div class="day-sched">${schedLine(d)}</div>
-      <div class="day-reasons"></div>`;
-    const rs = el.querySelector('.day-reasons');
-    for (const [r, n] of Object.entries(d.reasonCount)) {
-      const s = document.createElement('span');
-      s.textContent = n > 1 ? `${r} ×${n}` : r;
-      rs.appendChild(s);
-    }
-    box.appendChild(el);
+      <div class="day-reasons">${reasons}</div>
+    </div>`;
+}
+
+function renderSummary() {
+  const now = new Date();
+  const map = buildDays(now);
+  const avg = $('avg'), box = $('days');
+  const todayK = dayKey(now);
+  if (!map.size) {
+    avg.innerHTML = '';
+    $('day-viewer').hidden = true;
+    box.innerHTML = '<div class="empty">Aún no hay jornadas.<br>Empieza una desde la pestaña Hoy.</div>';
+    return;
   }
+  $('day-viewer').hidden = false;
+  // Todos los días desde el primer registro hasta hoy: los trabajados, los laborables sin registros y hoy
+  const all = [];
+  for (let dt = parseDay([...map.keys()].sort()[0]); dayKey(dt) <= todayK; dt.setDate(dt.getDate() + 1)) {
+    const k = dayKey(dt), d = map.get(k), exp = expectedMs(k);
+    if (d || exp || k === todayK) all.push({ k, d, exp });
+  }
+  all.reverse(); // más reciente primero
+
+  // Totales: el balance solo cuenta días cerrados (hoy entra cuando la jornada ha terminado)
+  const counted = all.filter(x => x.k !== todayK || (x.d && !x.d.open));
+  const totWork = counted.reduce((a, x) => a + (x.d ? x.d.work : 0), 0);
+  const totExp = counted.reduce((a, x) => a + x.exp, 0);
+  const bal = totWork - totExp;
+  const days = all.filter(x => x.d).map(x => x.d);
+  const closed = days.filter(d => !d.open);
+  const mean = arr => arr.reduce((x, y) => x + y, 0) / (arr.length || 1);
+  const card = (big, label, cls = '') => `<div class="card ${cls}"><div class="big">${big}</div><small>${label}</small></div>`;
+  avg.innerHTML =
+    card(hm(totWork), 'efectivo total') +
+    card(hm(totExp), 'esperado total') +
+    card(signedHM(bal), bal >= 0 ? 'balance · por encima de lo esperado' : 'balance · por debajo de lo esperado', 'wide ' + (bal >= 0 ? 'pos' : 'neg')) +
+    card(closed.length ? hm(mean(closed.map(d => d.work))) : '—', 'efectivo medio / día') +
+    card(closed.length ? hm(mean(closed.map(d => d.paused))) : '—', 'pausa media / día') +
+    card(days.length ? fromMinutes(mean(days.map(d => minutesOfDay(d.start)))) : '—', 'inicio medio') +
+    card(closed.length ? fromMinutes(mean(closed.map(d => minutesOfDay(d.end)))) : '—', 'fin medio');
+
+  // Visor de un día
+  if (!selectedDay || !all.some(x => x.k === selectedDay)) selectedDay = todayK;
+  const idx = all.findIndex(x => x.k === selectedDay);
+  $('day-prev').disabled = idx >= all.length - 1;
+  $('day-next').disabled = idx <= 0;
+  $('day-title').textContent = selectedDay === todayK ? 'Hoy' : fmtShortDate.format(parseDay(selectedDay));
+  $('day-detail').innerHTML = dayCardHTML(all[idx], todayK);
+
+  // Lista compacta de todos los días
+  box.innerHTML = `<h2>Todos los días <small>(${days.length} trabajado${days.length === 1 ? '' : 's'})</small></h2>` + all.map(x => {
+    const work = x.d ? x.d.work : 0, diff = work - x.exp;
+    const live = x.k === todayK && (!x.d || x.d.open);
+    const cls = live ? 'live' : (x.exp || work) ? (diff >= 0 ? 'pos' : 'neg') : 'live';
+    const diffTxt = live ? 'en curso' : (x.exp || work) ? signedHM(diff) : '—';
+    return `<button type="button" class="day-row${x.k === selectedDay ? ' sel' : ''}" data-day="${x.k}">
+      <span class="dr-date">${fmtShortDate.format(parseDay(x.k))}${daysOff.has(x.k) ? ' 🏖️' : ''}</span>
+      <span class="dr-work">${hm(work)}<small> / ${hm(x.exp)}</small></span>
+      <span class="diff ${cls}">${diffTxt}</span>
+    </button>`;
+  }).join('');
+  $('day-nav-keys').value = all.map(x => x.k).join(',');
 }
 
 function schedLine(d) {
@@ -619,6 +635,7 @@ function syncThemeColor() {
 
 let view = 'today';
 function show(v) {
+  if (v === 'summary') selectedDay = null; // al entrar en Resumen, se muestra hoy
   view = v;
   document.body.dataset.view = v;
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('active', s.id === `view-${v}`));
@@ -687,21 +704,35 @@ $('exp-summary').addEventListener('click', exportSummary);
 $('exp-events').addEventListener('click', exportEvents);
 $('exp-json').addEventListener('click', exportJSON);
 
-let resetTimer;
-$('reset').addEventListener('click', () => {
-  const b = $('reset');
-  if (!b.classList.contains('armed')) {
-    b.classList.add('armed');
-    b.textContent = '⚠️ Toca otra vez para borrarlo TODO';
-    resetTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = '🗑️ Borrar todos los registros'; }, 4000);
-    return;
-  }
-  clearTimeout(resetTimer);
+// Navegación del visor de días en Resumen
+function stepDay(delta) {
+  const keys = $('day-nav-keys').value.split(','); // más reciente primero
+  const i = keys.indexOf(selectedDay) - delta;
+  if (i >= 0 && i < keys.length) { selectedDay = keys[i]; renderSummary(); }
+}
+$('day-prev').addEventListener('click', () => stepDay(-1));
+$('day-next').addEventListener('click', () => stepDay(1));
+$('days').addEventListener('click', e => {
+  const b = e.target.closest('[data-day]');
+  if (!b) return;
+  selectedDay = b.dataset.day;
+  renderSummary();
+  $('day-viewer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+// Borrar: solo registros o todo (valores por defecto)
+$('reset').addEventListener('click', () => { $('reset').hidden = true; $('reset-choice').hidden = false; });
+$('reset-cancel').addEventListener('click', () => { $('reset').hidden = false; $('reset-choice').hidden = true; });
+$('reset-events').addEventListener('click', () => {
   events = [];
   save(K_EVENTS, events);
-  b.classList.remove('armed'); b.textContent = '🗑️ Borrar todos los registros';
+  $('reset').hidden = false; $('reset-choice').hidden = true;
   toast('Registros borrados');
   render();
+});
+$('reset-all').addEventListener('click', () => {
+  try { Object.keys(localStorage).filter(k => k.startsWith('busy.')).forEach(k => localStorage.removeItem(k)); } catch {}
+  location.reload();
 });
 
 // Refresco del cronómetro
