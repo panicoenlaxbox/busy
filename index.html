@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Busy</title>
+  <meta name="theme-color" content="#475569">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Busy">
+  <script>try{var t=localStorage.getItem('busy.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}</script>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-state="idle">
+  <main>
+    <!-- HOY -->
+    <section id="view-today" class="view active">
+      <header class="today-head">
+        <div class="date" id="today-date"></div>
+        <button id="undo-btn" class="undo" hidden>↶ Deshacer</button>
+      </header>
+
+      <div id="stale" class="stale" hidden>
+        <div class="stale-title">⚠️ Jornada sin cerrar</div>
+        <div class="stale-text" id="stale-text"></div>
+        <label class="stale-label">¿A qué hora terminaste?
+          <input type="time" id="stale-time">
+        </label>
+        <div class="stale-error" id="stale-error"></div>
+        <button id="stale-close" class="btn btn-main">■ Cerrar esa jornada</button>
+      </div>
+
+      <div id="today-main">
+        <div class="state-label" id="state-label">Sin empezar</div>
+        <div class="timer" id="timer">0:00:00</div>
+        <div class="timer-sub" id="timer-sub">Tiempo efectivo</div>
+        <div class="pause-info" id="pause-info" hidden></div>
+
+        <div class="stats">
+          <div class="stat"><span id="st-paused">0:00</span><small>pausado</small></div>
+          <div class="stat"><span id="st-pauses">0</span><small>pausas</small></div>
+          <div class="stat"><span id="st-start">—</span><small>inicio</small></div>
+        </div>
+
+        <div class="timeline" id="today-timeline"></div>
+        <ul class="events" id="today-events"></ul>
+      </div>
+
+      <div class="actions" id="actions"></div>
+    </section>
+
+    <!-- RESUMEN -->
+    <section id="view-summary" class="view">
+      <h1>Resumen</h1>
+      <div class="avg" id="avg"></div>
+      <div id="days"></div>
+    </section>
+
+    <!-- AJUSTES -->
+    <section id="view-settings" class="view">
+      <h1>Ajustes</h1>
+
+      <h2>Tema</h2>
+      <div class="seg-ctl" id="theme-ctl">
+        <button data-theme-opt="auto">🌓 Auto</button>
+        <button data-theme-opt="light">☀️ Claro</button>
+        <button data-theme-opt="dark">🌙 Oscuro</button>
+      </div>
+
+      <h2>Motivos rápidos</h2>
+      <div class="reasons-edit" id="reasons-edit"></div>
+      <form id="reason-form" class="reason-form">
+        <input id="reason-input" type="text" placeholder="Nuevo motivo…" maxlength="30" autocomplete="off">
+        <button class="btn btn-small" type="submit">＋ Añadir</button>
+      </form>
+
+      <h2>Exportar</h2>
+      <div class="stack">
+        <button class="btn btn-big btn-neutral" id="exp-summary">📊 Resumen por día (CSV)</button>
+        <button class="btn btn-big btn-neutral" id="exp-events">🕒 Todos los eventos (CSV)</button>
+        <button class="btn btn-big btn-neutral" id="exp-json">🧾 Datos completos (JSON)</button>
+      </div>
+
+      <h2>Peligro</h2>
+      <button class="btn btn-big btn-danger" id="reset">🗑️ Borrar todos los registros</button>
+      <p class="hint" id="data-count"></p>
+    </section>
+  </main>
+
+  <!-- Hoja de motivos -->
+  <div class="sheet-backdrop" id="sheet" hidden>
+    <div class="sheet">
+      <div class="sheet-title" id="sheet-title">¿Motivo?</div>
+      <div class="chips" id="sheet-chips"></div>
+      <form id="sheet-form" class="reason-form">
+        <input id="sheet-input" type="text" placeholder="Otro motivo…" maxlength="30" autocomplete="off">
+        <button class="btn btn-small" type="submit">OK</button>
+      </form>
+      <button class="btn btn-skip" id="sheet-skip">Sin motivo</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <nav class="tabs">
+    <button data-view="today" class="active"><span>⏱️</span>Hoy</button>
+    <button data-view="summary"><span>📅</span>Resumen</button>
+    <button data-view="settings"><span>⚙️</span>Ajustes</button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
