@@ -179,6 +179,10 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .chip { border: 0; border-radius: 999px; padding: 0 22px; min-height: 56px; font-size: 19px; font-weight: 700; background: var(--chip-bg); color: var(--chip-fg); display: inline-flex; align-items: center; }
 .chip:active { filter: brightness(.92); }
+.chips .chip.on { background: #16a34a; color: #fff; box-shadow: 0 0 0 3px var(--text) inset; }
+.chips .chip.on::before { content: '✓ '; white-space: pre; }
+.btn-ok { width: 100%; min-height: 60px; margin-top: 14px; background: #16a34a; color: #fff; font-size: 19px; font-weight: 800; border-radius: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 14px; }
+.btn-ok:disabled { opacity: .4; }
 .btn-skip { width: 100%; min-height: 56px; margin-top: 12px; background: var(--line); color: var(--text); font-size: 18px; border-radius: 16px; }
 
 /* ---------- TABS ---------- */

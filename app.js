@@ -119,7 +119,7 @@ function buildSessions(now = new Date()) {
       seg.to = t; cur.segs.push(seg);
       seg = { t: 'p', from: t };
       cur.pauses++;
-      if (e.reason) cur.reasons.push(e.reason);
+      if (e.reason) cur.reasons.push(...splitReasons(e.reason));
     } else if (e.type === 'resume') {
       seg.to = t; cur.segs.push(seg);
       seg = { t: 'w', from: t };
@@ -213,6 +213,9 @@ function undo() {
 const $ = id => document.getElementById(id);
 const escapeHTML = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let sheetFor = null;
+const sheetSel = new Set(); // motivos rápidos marcados en la hoja
+// Varios motivos se guardan en un solo texto separado por comas
+const splitReasons = r => String(r).split(',').map(x => x.trim()).filter(Boolean);
 
 function openSheet(type) {
   sheetFor = events[events.length - 1];
@@ -222,11 +225,22 @@ function openSheet(type) {
   for (const r of reasons) {
     const b = document.createElement('button');
     b.className = 'chip'; b.type = 'button'; b.textContent = r;
-    b.onclick = () => setReason(r);
+    b.onclick = () => { sheetSel.has(r) ? sheetSel.delete(r) : sheetSel.add(r); b.classList.toggle('on', sheetSel.has(r)); updateSheetOk(); };
     chips.appendChild(b);
   }
+  sheetSel.clear();
   $('sheet-input').value = '';
+  updateSheetOk();
   $('sheet').hidden = false;
+}
+function sheetValue() {
+  const txt = $('sheet-input').value.trim();
+  return [...reasons.filter(r => sheetSel.has(r)), ...(txt ? [txt] : [])].join(', ');
+}
+function updateSheetOk() {
+  const v = sheetValue();
+  $('sheet-ok').disabled = !v;
+  $('sheet-ok').textContent = v ? `✅ Guardar · ${v}` : '✅ Guardar';
 }
 function closeSheet() { $('sheet').hidden = true; sheetFor = null; }
 function setReason(r) {
@@ -657,7 +671,8 @@ $('actions').addEventListener('click', e => { const b = e.target.closest('[data-
 $('undo-btn').addEventListener('click', undo);
 $('sheet-skip').addEventListener('click', () => { closeSheet(); render(); });
 $('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') { closeSheet(); render(); } });
-$('sheet-form').addEventListener('submit', e => { e.preventDefault(); setReason($('sheet-input').value); });
+$('sheet-form').addEventListener('submit', e => { e.preventDefault(); const v = sheetValue(); if (v) setReason(v); });
+$('sheet-input').addEventListener('input', updateSheetOk);
 
 $('stale-close').addEventListener('click', () => {
   const open = currentSession();
