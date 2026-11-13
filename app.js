@@ -301,7 +301,25 @@ function renderToday() {
   sch.textContent = txt;
   $('timer').textContent = hms(day ? day.work : 0);
   const exp = expectedMs(todayK);
-  $('timer-sub').textContent = exp ? `Tiempo efectivo · esperado ${hm(exp)}` : 'Tiempo efectivo';
+  $('timer-sub').textContent = exp ? `Tiempo efectivo de ${hm(exp)} esperadas` : 'Tiempo efectivo';
+  // Tiempo restante (informativo): puede llegar a 0 y seguir trabajando
+  const rem = $('remaining');
+  const left = exp - (day ? day.work : 0);
+  rem.className = 'remaining';
+  if (!exp) rem.hidden = true;
+  else {
+    rem.hidden = false;
+    if (left > 0) {
+      const leftTxt = left >= 60000 ? hm(left) : '<1 min';
+      if (state === 'working') rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> · podrías parar a las <b>${clock(new Date(now.getTime() + left))}</b>`;
+      else if (state === 'paused') rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> al volver`;
+      else if (state === 'done') rem.innerHTML = `Te faltaron <b>${hm(left)}</b>`;
+      else rem.innerHTML = `⏳ Hoy toca <b>${hm(exp)}</b>`;
+    } else {
+      rem.classList.add('met');
+      rem.innerHTML = `✅ Jornada cumplida${-left >= 60000 ? ` · <b>+${hm(-left)}</b> extra` : ''}`;
+    }
+  }
   $('st-paused').textContent = hm(day ? day.paused : 0);
   $('st-pauses').textContent = day ? day.pauses : 0;
   $('st-start').textContent = day ? clock(day.start) : '—';

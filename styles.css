@@ -254,3 +254,8 @@ body[data-view="today"] .seg.p { background: #fde68a; }
 .empty-day { opacity: .75; border-style: dashed; }
 .empty-day .day-meta { align-items: center; }
 .empty-day .day-eff { color: var(--muted); }
+
+/* Tiempo restante */
+.remaining { text-align: center; margin: 10px auto 0; font-size: 17px; font-weight: 500; opacity: .95; }
+.remaining b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.remaining.met { display: table; background: rgba(255,255,255,.22); padding: 6px 16px; border-radius: 999px; font-weight: 700; }
