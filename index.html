@@ -76,6 +76,19 @@
       <p class="hint">Solo informativo: te avisa si trabajas fuera de él. Toca un día para marcarlo libre o laborable.</p>
       <div class="schedule-edit" id="schedule-edit"></div>
 
+      <h2>Días libres</h2>
+      <p class="hint">Vacaciones, festivos… Toca un día para marcarlo o desmarcarlo.</p>
+      <div class="cal card">
+        <div class="cal-nav">
+          <button type="button" id="cal-prev" aria-label="Mes anterior">◀</button>
+          <span id="cal-title"></span>
+          <button type="button" id="cal-next" aria-label="Mes siguiente">▶</button>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="cal-legend"><span><i class="lg-off"></i>libre</span><span><i class="lg-free"></i>sin horario</span></div>
+      </div>
+      <p class="hint" id="cal-count"></p>
+
       <h2>Motivos rápidos</h2>
       <div class="reasons-edit" id="reasons-edit"></div>
       <form id="reason-form" class="reason-form">

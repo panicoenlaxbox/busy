@@ -5,6 +5,7 @@ const K_EVENTS = 'busy.events';
 const K_REASONS = 'busy.reasons';
 const K_THEME = 'busy.theme';
 const K_SCHEDULE = 'busy.schedule';
+const K_DAYSOFF = 'busy.daysoff';
 // Horario por día de la semana (0 = domingo … 6 = sábado). null = día libre.
 const DEFAULT_SCHEDULE = { 0: null, 1: ['09:00', '18:00'], 2: ['09:00', '18:00'], 3: ['09:00', '18:00'], 4: ['09:00', '18:00'], 5: ['09:00', '18:00'], 6: null };
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -22,6 +23,8 @@ function save(key, value) {
 let events = load(K_EVENTS, []);   // [{ts: ISO, type: start|pause|resume|end, reason?}]
 let reasons = load(K_REASONS, DEFAULT_REASONS.slice());
 let schedule = load(K_SCHEDULE, DEFAULT_SCHEDULE);
+let daysOff = new Set(load(K_DAYSOFF, []));   // fechas 'YYYY-MM-DD' marcadas como libres
+const saveDaysOff = () => save(K_DAYSOFF, [...daysOff].sort());
 
 // ---------- Utilidades de tiempo ----------
 const pad = n => String(n).padStart(2, '0');
@@ -70,10 +73,25 @@ const ICON = { start: '▶️', pause: '⏸️', resume: '▶️', end: '⏹️'
 // Ventana de horario de un día concreto: {from, to, label} o null si es libre
 function scheduleWindow(dayK) {
   const base = parseDay(dayK), sch = schedule[base.getDay()];
-  if (!sch) return null;
+  if (!sch || daysOff.has(dayK)) return null;
   const at = hhmm => { const [h, m] = hhmm.split(':').map(Number); return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m); };
   return { from: at(sch[0]), to: at(sch[1]), label: `${sch[0]}–${sch[1]}` };
 }
+// Tipo de día y horas esperadas según horario y días libres
+function dayType(dayK) {
+  if (daysOff.has(dayK)) return 'día libre';
+  return schedule[parseDay(dayK).getDay()] ? 'laborable' : 'sin horario';
+}
+function expectedMs(dayK) {
+  const w = scheduleWindow(dayK);
+  return w ? w.to - w.from : 0;
+}
+// Duración con signo: +1:20 / -0:35
+function signedHM(ms) {
+  const m = Math.round(ms / 60000), a = Math.abs(m);
+  return `${m < 0 ? '-' : '+'}${Math.floor(a / 60)}:${pad(a % 60)}`;
+}
+
 // Milisegundos del tramo [a, b) que caen fuera de la ventana
 function outside(a, b, win) {
   if (!win) return b - a;
@@ -276,11 +294,14 @@ function renderToday() {
   const nowOut = state === 'working' && (!win || now < win.from || now > win.to);
   const sch = $('sched');
   sch.classList.toggle('out', nowOut);
+  const off = daysOff.has(todayK);
   let txt = nowOut ? (win ? `🌙 Fuera de horario · ${win.label}` : '🌙 Hoy es día libre')
-                   : (win ? `🕘 Horario ${win.label}` : '🏖️ Hoy no tienes horario');
+                   : (win ? `🕘 Horario ${win.label}` : off ? '🏖️ Hoy es día libre' : '🏖️ Hoy no tienes horario');
   if (day && day.out >= 60000) txt += ` · ${hm(day.out)} fuera`;
   sch.textContent = txt;
   $('timer').textContent = hms(day ? day.work : 0);
+  const exp = expectedMs(todayK);
+  $('timer-sub').textContent = exp ? `Tiempo efectivo · esperado ${hm(exp)}` : 'Tiempo efectivo';
   $('st-paused').textContent = hm(day ? day.paused : 0);
   $('st-pauses').textContent = day ? day.pauses : 0;
   $('st-start').textContent = day ? clock(day.start) : '—';
@@ -325,33 +346,63 @@ function renderToday() {
 // ---------- Render: Resumen ----------
 function renderSummary() {
   const now = new Date();
-  const days = [...buildDays(now).values()].sort((a, b) => b.day.localeCompare(a.day));
+  const map = buildDays(now);
   const avg = $('avg'), box = $('days');
-  if (!days.length) {
+  if (!map.size) {
     avg.innerHTML = '';
     box.innerHTML = '<div class="empty">Aún no hay jornadas.<br>Empieza una desde la pestaña Hoy.</div>';
     return;
   }
+  // Todos los días desde el primer registro hasta hoy: los trabajados y los laborables sin registros
+  const todayK = dayKey(now);
+  const all = [];
+  for (let dt = parseDay([...map.keys()].sort()[0]); dayKey(dt) <= todayK; dt.setDate(dt.getDate() + 1)) {
+    const k = dayKey(dt), d = map.get(k), exp = expectedMs(k);
+    if (d || exp) all.push({ k, d, exp });
+  }
+  all.reverse();
+
+  // El balance solo cuenta días cerrados: hoy entra cuando la jornada ha terminado
+  const counted = all.filter(x => x.k !== todayK || (x.d && !x.d.open));
+  const totWork = counted.reduce((a, x) => a + (x.d ? x.d.work : 0), 0);
+  const totExp = counted.reduce((a, x) => a + x.exp, 0);
+  const bal = totWork - totExp;
+
+  const days = all.filter(x => x.d).map(x => x.d);
   const closed = days.filter(d => !d.open);
   const mean = arr => arr.reduce((x, y) => x + y, 0) / (arr.length || 1);
-  const card = (big, label) => `<div class="card"><div class="big">${big}</div><small>${label}</small></div>`;
+  const card = (big, label, cls = '') => `<div class="card ${cls}"><div class="big">${big}</div><small>${label}</small></div>`;
   avg.innerHTML =
-    card(closed.length ? hm(mean(closed.map(d => d.work))) : '—', 'efectivo medio / día') +
+    card(hm(totWork), 'efectivo total') +
+    card(hm(totExp), 'esperado total') +
+    card(signedHM(bal), bal >= 0 ? 'balance · por encima de lo esperado' : 'balance · por debajo de lo esperado', 'wide ' + (bal >= 0 ? 'pos' : 'neg')) +
     card(closed.length ? hm(mean(closed.map(d => d.paused))) : '—', 'pausa media / día') +
+    card(closed.length ? hm(mean(closed.map(d => d.work))) : '—', 'efectivo medio / día') +
     card(fromMinutes(mean(days.map(d => minutesOfDay(d.start)))), 'inicio medio') +
     card(closed.length ? fromMinutes(mean(closed.map(d => minutesOfDay(d.end)))) : '—', 'fin medio');
 
-  box.innerHTML = `<div class="legend"><span><i style="background:#4ade80"></i>trabajo</span><span><i style="background:#fbbf24"></i>pausa</span><span>${days.length} día${days.length > 1 ? 's' : ''}</span></div>`;
-  for (const d of days) {
+  box.innerHTML = `<div class="legend"><span><i style="background:#4ade80"></i>trabajo</span><span><i style="background:#fbbf24"></i>pausa</span><span>${days.length} día${days.length === 1 ? '' : 's'} trabajado${days.length === 1 ? '' : 's'}</span></div>`;
+  for (const { k, d, exp } of all) {
     const el = document.createElement('div');
+    const work = d ? d.work : 0, diff = work - exp;
+    const live = k === todayK && (!d || d.open);
+    const diffChip = exp || work ? `<span class="diff ${live ? 'live' : diff >= 0 ? 'pos' : 'neg'}">${live ? 'en curso' : signedHM(diff)}</span>` : '';
+    const head = `<div class="day-head"><span class="day-name">${fmtShortDate.format(parseDay(k))}</span><span class="day-eff">${hm(work)}<small> / ${hm(exp)}</small></span></div>`;
+    if (!d) {
+      el.className = 'card day empty-day';
+      el.innerHTML = `${head}<div class="day-meta"><span>Sin registros</span>${diffChip}</div>`;
+      box.appendChild(el);
+      continue;
+    }
     el.className = 'card day';
     el.innerHTML = `
-      <div class="day-head"><span class="day-name">${fmtShortDate.format(parseDay(d.day))}</span><span class="day-eff">${hm(d.work)}</span></div>
+      ${head}
       ${timelineHTML(d)}
       <div class="day-meta">
         <span>🕘 <b>${clock(d.start)}</b> → <b>${d.open ? 'en curso' : clock(d.end)}</b></span>
         <span>⏸️ <b>${hm(d.paused)}</b> pausado</span>
         <span><b>${d.pauses}</b> pausa${d.pauses === 1 ? '' : 's'}</span>
+        ${diffChip}
       </div>
       <div class="day-sched">${schedLine(d)}</div>
       <div class="day-reasons"></div>`;
@@ -376,6 +427,32 @@ function schedLine(d) {
 }
 
 // ---------- Render: Ajustes ----------
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+let calMonth = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })();
+
+function renderCalendar() {
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  $('cal-title').textContent = `${cap(MONTHS[m])} ${y}`;
+  const grid = $('cal-grid');
+  let html = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(x => `<span class="cal-h">${x}</span>`).join('');
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7; // lunes = 0
+  html += '<span></span>'.repeat(lead);
+  const todayK = dayKey(new Date()), days = new Date(y, m + 1, 0).getDate();
+  for (let i = 1; i <= days; i++) {
+    const k = dayKey(new Date(y, m, i));
+    const cls = ['cal-d'];
+    if (daysOff.has(k)) cls.push('off');
+    else if (!schedule[new Date(y, m, i).getDay()]) cls.push('free');
+    if (k === todayK) cls.push('today');
+    html += `<button type="button" class="${cls.join(' ')}" data-day="${k}">${i}</button>`;
+  }
+  grid.innerHTML = html;
+  const yr = String(new Date().getFullYear());
+  const nYear = [...daysOff].filter(k => k.startsWith(yr)).length;
+  const nMonth = [...daysOff].filter(k => k.startsWith(`${y}-${pad(m + 1)}`)).length;
+  $('cal-count').textContent = `${nMonth} en este mes · ${nYear} día${nYear === 1 ? '' : 's'} libre${nYear === 1 ? '' : 's'} en ${yr}`;
+}
+
 function renderSchedule() {
   const box = $('schedule-edit');
   box.innerHTML = '';
@@ -390,7 +467,7 @@ function renderSchedule() {
       ${timePickerHTML('sch-to', sch ? sch[1] : '18:00', 5, !sch)}`;
     row.querySelector('.sch-day').onclick = () => {
       schedule[wd] = sch ? null : DEFAULT_SCHEDULE[1].slice();
-      save(K_SCHEDULE, schedule); renderSchedule();
+      save(K_SCHEDULE, schedule); renderSchedule(); renderCalendar();
     };
     const onChange = () => {
       const f = tpGet(row.querySelector('.sch-from')), t = tpGet(row.querySelector('.sch-to'));
@@ -405,6 +482,7 @@ function renderSchedule() {
 
 function renderSettings() {
   renderSchedule();
+  renderCalendar();
   const box = $('reasons-edit');
   box.innerHTML = '';
   for (const r of reasons) {
@@ -449,15 +527,26 @@ async function deliver(filename, text, mime) {
 }
 
 function exportSummary() {
-  const days = [...buildDays().values()].sort((a, b) => a.day.localeCompare(b.day));
-  const rows = [['fecha', 'dia_semana', 'inicio', 'fin', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'pausas', 'sesiones', 'motivos', 'horario', 'antes_min', 'despues_min', 'fuera_horario_min']];
-  for (const d of days) rows.push([
-    ddmmyyyy(parseDay(d.day)), fmtWeekday.format(parseDay(d.day)), clock(d.start), d.open ? '' : clock(d.end),
-    hm(d.work), Math.round(d.work / 60000), hm(d.paused), Math.round(d.paused / 60000),
-    d.pauses, d.sessions.length,
-    Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(', '),
-    d.win ? d.win.label : 'libre', Math.round(d.early / 60000), Math.round(d.late / 60000), Math.round(d.out / 60000),
-  ]);
+  // Todos los días desde el primer registro hasta hoy (también los que no se trabajó),
+  // para que el esperado vs. efectivo cuadre.
+  const map = buildDays();
+  const keys = [...map.keys()].sort();
+  const rows = [['fecha', 'dia_semana', 'tipo_dia', 'horario', 'esperado_hhmm', 'esperado_min', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'diferencia_hhmm', 'diferencia_min', 'inicio', 'fin', 'pausas', 'sesiones', 'motivos', 'antes_min', 'despues_min', 'fuera_horario_min']];
+  if (keys.length) {
+    const today = dayKey(new Date());
+    for (let dt = parseDay(keys[0]); dayKey(dt) <= today; dt.setDate(dt.getDate() + 1)) {
+      const k = dayKey(dt), d = map.get(k), win = scheduleWindow(k), exp = expectedMs(k);
+      const work = d ? d.work : 0, paused = d ? d.paused : 0;
+      rows.push([
+        ddmmyyyy(dt), fmtWeekday.format(dt), dayType(k), win ? win.label : '',
+        hm(exp), Math.round(exp / 60000), hm(work), Math.round(work / 60000), hm(paused), Math.round(paused / 60000),
+        signedHM(work - exp), Math.round(work / 60000) - Math.round(exp / 60000),
+        d ? clock(d.start) : '', d && !d.open ? clock(d.end) : '', d ? d.pauses : 0, d ? d.sessions.length : 0,
+        d ? Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(', ') : '',
+        d ? Math.round(d.early / 60000) : 0, d ? Math.round(d.late / 60000) : 0, d ? Math.round(d.out / 60000) : 0,
+      ]);
+    }
+  }
   deliver(`busy_resumen_${stamp()}.csv`, csv(rows), 'text/csv');
 }
 
@@ -472,7 +561,7 @@ function exportEvents() {
 }
 
 function exportJSON() {
-  const data = { app: 'busy', exportedAt: new Date().toISOString(), timezoneOffsetMin: -new Date().getTimezoneOffset(), reasons, schedule, events };
+  const data = { app: 'busy', exportedAt: new Date().toISOString(), timezoneOffsetMin: -new Date().getTimezoneOffset(), reasons, schedule, daysOff: [...daysOff].sort(), events };
   deliver(`busy_${stamp()}.json`, JSON.stringify(data, null, 2), 'application/json');
 }
 
@@ -535,6 +624,17 @@ $('stale-close').addEventListener('click', () => {
   toast(`Jornada cerrada a las ${clock(end)}`);
   render();
 });
+
+$('cal-grid').addEventListener('click', e => {
+  const b = e.target.closest('[data-day]');
+  if (!b) return;
+  const k = b.dataset.day;
+  daysOff.has(k) ? daysOff.delete(k) : daysOff.add(k);
+  saveDaysOff();
+  renderCalendar();
+});
+$('cal-prev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
+$('cal-next').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
 
 $('reason-form').addEventListener('submit', e => {
   e.preventDefault();
