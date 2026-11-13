@@ -1,5 +1,5 @@
 // Network-first: si hay red, siempre la última versión; si no, la copia en caché.
-const CACHE = 'busy-v1';
+const CACHE = 'busy-v2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 

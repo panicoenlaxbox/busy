@@ -4,6 +4,11 @@
 const K_EVENTS = 'busy.events';
 const K_REASONS = 'busy.reasons';
 const K_THEME = 'busy.theme';
+const K_SCHEDULE = 'busy.schedule';
+// Horario por día de la semana (0 = domingo … 6 = sábado). null = día libre.
+const DEFAULT_SCHEDULE = { 0: null, 1: ['09:00', '18:00'], 2: ['09:00', '18:00'], 3: ['09:00', '18:00'], 4: ['09:00', '18:00'], 5: ['09:00', '18:00'], 6: null };
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const WEEK_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const DEFAULT_REASONS = ['Café', 'Gimnasio', 'Perro'];
 
 function load(key, fallback) {
@@ -16,6 +21,7 @@ function save(key, value) {
 
 let events = load(K_EVENTS, []);   // [{ts: ISO, type: start|pause|resume|end, reason?}]
 let reasons = load(K_REASONS, DEFAULT_REASONS.slice());
+let schedule = load(K_SCHEDULE, DEFAULT_SCHEDULE);
 
 // ---------- Utilidades de tiempo ----------
 const pad = n => String(n).padStart(2, '0');
@@ -43,6 +49,21 @@ const parseDay = k => { const [y, m, d] = k.split('-').map(Number); return new D
 
 const LABEL = { start: 'Empiezo', pause: 'Pausa', resume: 'Reanudo', end: 'Fin' };
 const ICON = { start: '▶️', pause: '⏸️', resume: '▶️', end: '⏹️' };
+
+// ---------- Horario ----------
+// Ventana de horario de un día concreto: {from, to, label} o null si es libre
+function scheduleWindow(dayK) {
+  const base = parseDay(dayK), sch = schedule[base.getDay()];
+  if (!sch) return null;
+  const at = hhmm => { const [h, m] = hhmm.split(':').map(Number); return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m); };
+  return { from: at(sch[0]), to: at(sch[1]), label: `${sch[0]}–${sch[1]}` };
+}
+// Milisegundos del tramo [a, b) que caen fuera de la ventana
+function outside(a, b, win) {
+  if (!win) return b - a;
+  const inA = Math.max(a, win.from), inB = Math.min(b, win.to);
+  return (b - a) - Math.max(0, inB - inA);
+}
 
 // ---------- Cálculo ----------
 // Recorre los eventos y construye sesiones (de "start" a "end").
@@ -96,7 +117,14 @@ function buildDays(now = new Date()) {
       for (const r of s.reasons) reasonCount[r] = (reasonCount[r] || 0) + 1;
     }
     const first = d.sessions[0], last = d.sessions[d.sessions.length - 1];
+    const win = scheduleWindow(d.day);
+    let out = 0;
+    for (const s of d.sessions) for (const g of s.segs) if (g.t === 'w') out += outside(g.from, g.to, win);
+    const endT = last.open ? null : last.workEnd;
     Object.assign(d, {
+      win, out,
+      early: win ? Math.max(0, win.from - first.start) : 0,
+      late: win && endT ? Math.max(0, endT - win.to) : 0,
       work, paused, pauses, reasonCount,
       start: first.start,
       end: last.open ? null : last.workEnd,
@@ -226,6 +254,16 @@ function renderToday() {
 
   const day = buildDays(now).get(todayK);
   $('state-label').textContent = { idle: 'Sin empezar', working: 'Trabajando', paused: 'En pausa', done: 'Jornada terminada' }[state];
+
+  // Horario (informativo)
+  const win = scheduleWindow(todayK);
+  const nowOut = state === 'working' && (!win || now < win.from || now > win.to);
+  const sch = $('sched');
+  sch.classList.toggle('out', nowOut);
+  let txt = nowOut ? (win ? `🌙 Fuera de horario · ${win.label}` : '🌙 Hoy es día libre')
+                   : (win ? `🕘 Horario ${win.label}` : '🏖️ Hoy no tienes horario');
+  if (day && day.out >= 60000) txt += ` · ${hm(day.out)} fuera`;
+  sch.textContent = txt;
   $('timer').textContent = hms(day ? day.work : 0);
   $('st-paused').textContent = hm(day ? day.paused : 0);
   $('st-pauses').textContent = day ? day.pauses : 0;
@@ -299,6 +337,7 @@ function renderSummary() {
         <span>⏸️ <b>${hm(d.paused)}</b> pausado</span>
         <span><b>${d.pauses}</b> pausa${d.pauses === 1 ? '' : 's'}</span>
       </div>
+      <div class="day-sched">${schedLine(d)}</div>
       <div class="day-reasons"></div>`;
     const rs = el.querySelector('.day-reasons');
     for (const [r, n] of Object.entries(d.reasonCount)) {
@@ -310,8 +349,46 @@ function renderSummary() {
   }
 }
 
+function schedLine(d) {
+  const bits = [];
+  if (!d.win) bits.push('<span class="out">🏖️ día libre</span>');
+  if (d.early >= 60000) bits.push(`<span class="out">⏪ ${human(d.early)} antes</span>`);
+  if (d.late >= 60000) bits.push(`<span class="out">⏩ ${human(d.late)} después</span>`);
+  if (d.out >= 60000) bits.push(`<span class="out">🌙 <b>${hm(d.out)}</b> fuera de horario</span>`);
+  else if (d.win) bits.push(`<span class="in">✓ dentro de horario ${d.win.label}</span>`);
+  return bits.join('');
+}
+
 // ---------- Render: Ajustes ----------
+function renderSchedule() {
+  const box = $('schedule-edit');
+  box.innerHTML = '';
+  for (const wd of WEEK_ORDER) {
+    const sch = schedule[wd];
+    const row = document.createElement('div');
+    row.className = 'sch-row' + (sch ? '' : ' off');
+    row.innerHTML = `
+      <button type="button" class="sch-day">${WEEK_NAMES[wd]}<small>${sch ? 'laborable' : 'libre'}</small></button>
+      <input type="time" class="sch-from" ${sch ? `value="${sch[0]}"` : 'disabled'}>
+      <span class="sch-sep">→</span>
+      <input type="time" class="sch-to" ${sch ? `value="${sch[1]}"` : 'disabled'}>`;
+    row.querySelector('.sch-day').onclick = () => {
+      schedule[wd] = sch ? null : DEFAULT_SCHEDULE[1].slice();
+      save(K_SCHEDULE, schedule); renderSchedule();
+    };
+    const onChange = () => {
+      const f = row.querySelector('.sch-from').value, t = row.querySelector('.sch-to').value;
+      if (f && t && f < t) { schedule[wd] = [f, t]; save(K_SCHEDULE, schedule); toast(`${WEEK_NAMES[wd]}: ${f}–${t}`); }
+      else toast('El inicio tiene que ser antes del fin');
+    };
+    row.querySelector('.sch-from').onchange = onChange;
+    row.querySelector('.sch-to').onchange = onChange;
+    box.appendChild(row);
+  }
+}
+
 function renderSettings() {
+  renderSchedule();
   const box = $('reasons-edit');
   box.innerHTML = '';
   for (const r of reasons) {
@@ -338,7 +415,7 @@ const csv = rows => rows.map(r => r.map(csvCell).join(';')).join('\r\n');
 const stamp = () => { const d = new Date(); return `${dayKey(d)}_${pad(d.getHours())}${pad(d.getMinutes())}`; };
 
 async function deliver(filename, text, mime) {
-  const blob = new Blob([mime === 'text/csv' ? '﻿' + text : text], { type: mime });
+  const blob = new Blob([mime === 'text/csv' ? '\uFEFF' + text : text], { type: mime });
   const isTouch = matchMedia('(pointer: coarse)').matches;
   if (isTouch && navigator.canShare) {
     const file = new File([blob], filename, { type: mime });
@@ -357,12 +434,13 @@ async function deliver(filename, text, mime) {
 
 function exportSummary() {
   const days = [...buildDays().values()].sort((a, b) => a.day.localeCompare(b.day));
-  const rows = [['fecha', 'dia_semana', 'inicio', 'fin', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'pausas', 'sesiones', 'motivos']];
+  const rows = [['fecha', 'dia_semana', 'inicio', 'fin', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'pausas', 'sesiones', 'motivos', 'horario', 'antes_min', 'despues_min', 'fuera_horario_min']];
   for (const d of days) rows.push([
     d.day, fmtWeekday.format(parseDay(d.day)), clock(d.start), d.open ? '' : clock(d.end),
     hm(d.work), Math.round(d.work / 60000), hm(d.paused), Math.round(d.paused / 60000),
     d.pauses, d.sessions.length,
     Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(', '),
+    d.win ? d.win.label : 'libre', Math.round(d.early / 60000), Math.round(d.late / 60000), Math.round(d.out / 60000),
   ]);
   deliver(`busy_resumen_${stamp()}.csv`, csv(rows), 'text/csv');
 }
@@ -378,7 +456,7 @@ function exportEvents() {
 }
 
 function exportJSON() {
-  const data = { app: 'busy', exportedAt: new Date().toISOString(), timezoneOffsetMin: -new Date().getTimezoneOffset(), reasons, events };
+  const data = { app: 'busy', exportedAt: new Date().toISOString(), timezoneOffsetMin: -new Date().getTimezoneOffset(), reasons, schedule, events };
   deliver(`busy_${stamp()}.json`, JSON.stringify(data, null, 2), 'application/json');
 }
 
