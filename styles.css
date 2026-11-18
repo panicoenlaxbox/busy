@@ -146,6 +146,7 @@ body[data-view="today"] .seg.p.paid { background: repeating-linear-gradient(135d
 .btn-small { min-height: 52px; padding: 0 18px; font-size: 17px; background: var(--text); color: var(--bg); border-radius: 14px; white-space: nowrap; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .hint { color: var(--muted); font-size: 14px; }
+.version { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; opacity: .8; }
 
 /* Stale */
 .stale { background: rgba(0,0,0,.2); border-radius: 18px; padding: 18px; margin-top: 16px; }

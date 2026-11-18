@@ -1,5 +1,8 @@
 'use strict';
 
+// Versión de la app: tiene que coincidir con CACHE ('busy-vN') de sw.js. Subir las dos en cada despliegue.
+const VERSION = 15;
+
 // ---------- Almacenamiento ----------
 const K_EVENTS = 'busy.events';
 const K_REASONS = 'busy.reasons';
@@ -795,6 +798,7 @@ setInterval(() => { if (view === 'today' && $('sheet').hidden) renderToday(); },
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { events = load(K_EVENTS, []); render(); } });
 
 applyTheme();
+$('version').textContent = `Busy · versión ${VERSION}`;
 show('today');
 
 // ---------- Sugerir instalación (Chrome Android) ----------
