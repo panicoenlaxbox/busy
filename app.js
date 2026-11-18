@@ -20,7 +20,7 @@ function save(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { toast('⚠️ No se pudo guardar'); }
 }
 
-let events = load(K_EVENTS, []);   // [{ts: ISO, type: start|pause|resume|end, reasons?: [motivos rápidos], note?: texto libre}]
+let events = load(K_EVENTS, []);   // [{ts: ISO, type: start|pause|resume|end, reasons?: [motivos rápidos], note?: texto libre, paid?: true (pausa computable)}]
 let reasons = load(K_REASONS, DEFAULT_REASONS.slice());
 let schedule = load(K_SCHEDULE, DEFAULT_SCHEDULE);
 let daysOff = new Set(load(K_DAYSOFF, []));   // fechas 'YYYY-MM-DD' marcadas como libres
@@ -117,14 +117,14 @@ function buildSessions(now = new Date()) {
     cur.events.push(e);
     if (e.type === 'pause') {
       seg.to = t; cur.segs.push(seg);
-      seg = { t: 'p', from: t };
+      seg = { t: 'p', from: t, paid: !!e.paid }; // paid: la pausa cuenta como tiempo de trabajo
       cur.pauses++;
       cur.reasons.push(...eventTags(e));
     } else if (e.type === 'resume') {
       seg.to = t; cur.segs.push(seg);
       seg = { t: 'w', from: t };
     } else if (e.type === 'end') {
-      if (seg.t === 'w') { seg.to = t; cur.segs.push(seg); cur.workEnd = t; }
+      if (seg.t === 'w' || seg.paid) { seg.to = t; cur.segs.push(seg); cur.workEnd = t; } // una pausa computable cuenta hasta el fin
       else { cur.workEnd = seg.from; cur.pauses--; } // terminó estando en pausa: la jornada acabó al pausar (esa pausa no cuenta)
       cur.end = t; cur.open = false;
       sessions.push(cur); cur = null; seg = null;
@@ -144,23 +144,28 @@ function buildDays(now = new Date()) {
     map.get(s.day).sessions.push(s);
   }
   for (const d of map.values()) {
-    let work = 0, paused = 0, pauses = 0;
+    let work = 0, paused = 0, paidPaused = 0, pauses = 0;
     const reasonCount = {};
     for (const s of d.sessions) {
-      for (const g of s.segs) (g.t === 'w' ? (work += g.to - g.from) : (paused += g.to - g.from));
+      for (const g of s.segs) {
+        const ms = g.to - g.from;
+        if (g.t === 'w') work += ms;
+        else if (g.paid) { work += ms; paidPaused += ms; } // pausa computable: suma al efectivo
+        else paused += ms;
+      }
       pauses += s.pauses;
       for (const r of s.reasons) reasonCount[r] = (reasonCount[r] || 0) + 1;
     }
     const first = d.sessions[0], last = d.sessions[d.sessions.length - 1];
     const win = scheduleWindow(d.day);
     let out = 0;
-    for (const s of d.sessions) for (const g of s.segs) if (g.t === 'w') out += outside(g.from, g.to, win);
+    for (const s of d.sessions) for (const g of s.segs) if (g.t === 'w' || g.paid) out += outside(g.from, g.to, win);
     const endT = last.open ? null : last.workEnd;
     Object.assign(d, {
       win, out,
       early: win ? Math.max(0, win.from - first.start) : 0,
       late: win && endT ? Math.max(0, endT - win.to) : 0,
-      work, paused, pauses, reasonCount,
+      work, paused, paidPaused, pauses, reasonCount,
       start: first.start,
       end: last.open ? null : last.workEnd,
       open: last.open,
@@ -231,6 +236,8 @@ function openSheet(type) {
   }
   sheetSel.clear();
   $('sheet-input').value = '';
+  $('sheet-paid-wrap').hidden = type !== 'pause';
+  $('sheet-paid').checked = !!sheetFor.paid;
   updateSheetOk();
   $('sheet').hidden = false;
 }
@@ -242,6 +249,12 @@ function sheetValue() {
 }
 function updateSheetOk() {
   $('sheet-ok').disabled = !eventText(sheetValue());
+}
+// Marca (o desmarca) una pausa como computable; se guarda al momento
+function setPaid(e, on) {
+  if (!e || e.type !== 'pause') return;
+  if (on) e.paid = true; else delete e.paid;
+  save(K_EVENTS, events);
 }
 function closeSheet() { $('sheet').hidden = true; sheetFor = null; }
 function setReason(v) {
@@ -265,7 +278,7 @@ function timelineHTML(day) {
     if (s.start > cursor) html += `<div class="seg g" style="width:${(s.start - cursor) / total * 100}%"></div>`;
     for (const g of s.segs) {
       const w = (g.to - g.from) / total * 100;
-      if (w > 0) html += `<div class="seg ${g.t}" style="width:${w}%"></div>`;
+      if (w > 0) html += `<div class="seg ${g.t}${g.paid ? ' paid' : ''}" style="width:${w}%"></div>`;
       cursor = g.to;
     }
   }
@@ -308,7 +321,10 @@ function renderToday() {
 
   // Horario (informativo)
   const win = scheduleWindow(todayK);
-  const nowOut = state === 'working' && (!win || now < win.from || now > win.to);
+  const lastEv = events[events.length - 1];
+  const paidPause = state === 'paused' && !!lastEv.paid; // en pausa, pero cuenta como trabajo
+  const counting = state === 'working' || paidPause;
+  const nowOut = counting && (!win || now < win.from || now > win.to);
   const sch = $('sched');
   sch.classList.toggle('out', nowOut);
   const off = daysOff.has(todayK);
@@ -328,7 +344,11 @@ function renderToday() {
     rem.hidden = false;
     if (left > 0) {
       const leftTxt = hms(left + 999); // redondeo hacia arriba para no mostrar 0:00:00 antes de tiempo
-      if (state === 'working') rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> · podrías parar a las <b>${clock(new Date(now.getTime() + left))}</b>`;
+      // La hora de salida da por hecho el descanso del horario: suma lo que quede de él
+      // (descanso menos las pausas no computables ya hechas). El efectivo restante no cambia.
+      const brkLeft = win ? Math.max(0, win.brk * 60000 - (day ? day.paused : 0)) : 0;
+      const brkTxt = brkLeft >= 60000 ? ` <small>· incluye ${human(brkLeft)} de descanso</small>` : '';
+      if (counting) rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> · podrías parar a las <b>${clock(new Date(now.getTime() + left + brkLeft))}</b>${brkTxt}`;
       else if (state === 'paused') rem.innerHTML = `⏳ Quedan <b>${leftTxt}</b> al volver`;
       else if (state === 'done') rem.innerHTML = `Te faltaron <b>${hm(left)}</b>`;
       else rem.innerHTML = `⏳ Hoy toca <b>${hm(exp)}</b>`;
@@ -337,30 +357,40 @@ function renderToday() {
       rem.innerHTML = `✅ Jornada cumplida${-left >= 1000 ? ` · <b>+${hms(-left)}</b> extra` : ''}`;
     }
   }
-  $('st-paused').textContent = hm(day ? day.paused : 0);
+  $('st-paused').textContent = hm(day ? day.paused : 0); // solo pausas no computables
   $('st-pauses').textContent = day ? day.pauses : 0;
   $('st-start').textContent = day ? clock(day.start) : '—';
 
   const pi = $('pause-info');
   if (state === 'paused') {
-    const p = events[events.length - 1], pt = new Date(p.ts);
+    const p = lastEv, pt = new Date(p.ts);
     pi.hidden = false;
-    pi.textContent = `En pausa desde ${clock(pt)} · ${human(now - pt)}${eventText(p) ? ' · ' + eventText(p) : ''}`;
+    pi.innerHTML = `<div class="pause-clock">⏸️ ${hms(now - pt)}</div><div>Desde ${clock(pt)}${p.paid ? ' · 💼 computable' : ''}${eventText(p) ? ' · ' + escapeHTML(eventText(p)) : ''}</div>`;
   } else if (state === 'done' && day) {
     pi.hidden = false;
     pi.textContent = `De ${clock(day.start)} a ${clock(day.end)}`;
   } else pi.hidden = true;
+  // Interruptor de pausa computable (fuera de pause-info para que el refresco no lo regenere)
+  const pp = $('pause-paid');
+  pp.hidden = state !== 'paused';
+  if (state === 'paused') {
+    pp.classList.toggle('on', paidPause);
+    pp.textContent = paidPause ? '💼 Esta pausa cuenta como trabajo · quitar' : '💼 Contar esta pausa como trabajo';
+  }
 
   $('today-timeline').innerHTML = day ? timelineHTML(day) : '';
   $('today-timeline').className = day ? '' : 'timeline-empty';
 
+  // Registros del día: plegados por defecto para no empujar los botones hacia abajo
   const list = $('today-events');
   list.innerHTML = '';
+  $('today-log').hidden = !day;
   if (day) {
     const evs = day.sessions.flatMap(s => s.events).slice().reverse();
+    $('today-log-sum').textContent = `🕒 Registros de hoy (${evs.length}) · último ${clock(new Date(evs[0].ts))} ${LABEL[evs[0].type]}`;
     for (const e of evs) {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="t">${clock(new Date(e.ts))}</span><span>${ICON[e.type]} ${LABEL[e.type]}</span>${eventText(e) ? `<span class="r"></span>` : ''}`;
+      li.innerHTML = `<span class="t">${clock(new Date(e.ts))}</span><span>${ICON[e.type]} ${LABEL[e.type]}${e.paid ? ' 💼' : ''}</span>${eventText(e) ? `<span class="r"></span>` : ''}`;
       if (eventText(e)) li.querySelector('.r').textContent = eventText(e);
       list.appendChild(li);
     }
@@ -397,6 +427,7 @@ function dayCardHTML({ k, d, exp }, todayK) {
       <div class="day-meta">
         <span>🕘 <b>${clock(d.start)}</b> → <b>${d.open ? 'en curso' : clock(d.end)}</b></span>
         <span>⏸️ <b>${hm(d.paused)}</b> pausado</span>
+        ${d.paidPaused >= 60000 ? `<span>💼 <b>${hm(d.paidPaused)}</b> pausa computable</span>` : ''}
         <span><b>${d.pauses}</b> pausa${d.pauses === 1 ? '' : 's'}</span>
         ${diffChip}
       </div>
@@ -594,7 +625,7 @@ function exportSummary() {
   // para que el esperado vs. efectivo cuadre.
   const map = buildDays();
   const keys = [...map.keys()].sort();
-  const rows = [['fecha', 'dia_semana', 'tipo_dia', 'horario', 'descanso_min', 'esperado_hhmm', 'esperado_min', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'diferencia_hhmm', 'diferencia_min', 'inicio', 'fin', 'pausas', 'sesiones', 'motivos', 'antes_min', 'despues_min', 'fuera_horario_min']];
+  const rows = [['fecha', 'dia_semana', 'tipo_dia', 'horario', 'descanso_min', 'esperado_hhmm', 'esperado_min', 'efectivo_hhmm', 'efectivo_min', 'pausado_hhmm', 'pausado_min', 'diferencia_hhmm', 'diferencia_min', 'inicio', 'fin', 'pausas', 'sesiones', 'motivos', 'antes_min', 'despues_min', 'fuera_horario_min', 'pausa_computable_min']];
   if (keys.length) {
     const today = dayKey(new Date());
     for (let dt = parseDay(keys[0]); dayKey(dt) <= today; dt.setDate(dt.getDate() + 1)) {
@@ -607,6 +638,7 @@ function exportSummary() {
         d ? clock(d.start) : '', d && !d.open ? clock(d.end) : '', d ? d.pauses : 0, d ? d.sessions.length : 0,
         d ? Object.entries(d.reasonCount).map(([r, n]) => n > 1 ? `${r} x${n}` : r).join(' | ') : '',
         d ? Math.round(d.early / 60000) : 0, d ? Math.round(d.late / 60000) : 0, d ? Math.round(d.out / 60000) : 0,
+        d ? Math.round(d.paidPaused / 60000) : 0,
       ]);
     }
   }
@@ -614,11 +646,11 @@ function exportSummary() {
 }
 
 function exportEvents() {
-  const rows = [['fecha', 'hora', 'evento', 'motivos', 'nota', 'timestamp']];
+  const rows = [['fecha', 'hora', 'evento', 'motivos', 'nota', 'computable', 'timestamp']];
   const sessions = buildSessions();
   for (const s of sessions) for (const e of s.events) {
     const t = new Date(e.ts);
-    rows.push([ddmmyyyy(parseDay(s.day)), `${clock(t)}:${pad(t.getSeconds())}`, LABEL[e.type], (e.reasons || []).join(' | '), e.note || '', e.ts]);
+    rows.push([ddmmyyyy(parseDay(s.day)), `${clock(t)}:${pad(t.getSeconds())}`, LABEL[e.type], (e.reasons || []).join(' | '), e.note || '', e.type === 'pause' ? (e.paid ? 'sí' : 'no') : '', e.ts]);
   }
   deliver(`busy_eventos_${stamp()}.csv`, csv(rows), 'text/csv');
 }
@@ -674,6 +706,13 @@ $('sheet-skip').addEventListener('click', () => { closeSheet(); render(); });
 $('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') { closeSheet(); render(); } });
 $('sheet-form').addEventListener('submit', e => { e.preventDefault(); setReason(sheetValue()); });
 $('sheet-input').addEventListener('input', updateSheetOk);
+$('sheet-paid').addEventListener('change', e => setPaid(sheetFor, e.target.checked));
+$('pause-paid').addEventListener('click', () => {
+  const p = events[events.length - 1];
+  setPaid(p, !p.paid);
+  toast(p.paid ? '💼 La pausa cuenta como trabajo' : 'La pausa ya no cuenta como trabajo');
+  render();
+});
 
 $('stale-close').addEventListener('click', () => {
   const open = currentSession();

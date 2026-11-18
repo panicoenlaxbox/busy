@@ -47,6 +47,7 @@
         <div class="timer-sub" id="timer-sub">Tiempo efectivo</div>
         <div class="remaining" id="remaining" hidden></div>
         <div class="pause-info" id="pause-info" hidden></div>
+        <button type="button" class="pause-paid" id="pause-paid" hidden></button>
 
         <div class="stats">
           <div class="stat"><span id="st-paused">0:00</span><small>pausado</small></div>
@@ -55,7 +56,10 @@
         </div>
 
         <div class="timeline" id="today-timeline"></div>
-        <ul class="events" id="today-events"></ul>
+        <details class="log" id="today-log" hidden>
+          <summary id="today-log-sum"></summary>
+          <ul class="events" id="today-events"></ul>
+        </details>
       </div>
 
       <div class="actions" id="actions"></div>
@@ -141,6 +145,10 @@
     <div class="sheet">
       <div class="sheet-title" id="sheet-title">¿Motivo?</div>
       <div class="chips" id="sheet-chips"></div>
+      <label class="sheet-paid" id="sheet-paid-wrap" hidden>
+        <input type="checkbox" id="sheet-paid">
+        <span>💼 Cuenta como tiempo de trabajo<small>La pausa suma al tiempo efectivo</small></span>
+      </label>
       <form id="sheet-form" class="reason-form">
         <input id="sheet-input" type="text" placeholder="Otro motivo…" maxlength="40" autocomplete="off" enterkeyhint="done">
       </form>
