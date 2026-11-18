@@ -818,6 +818,20 @@ $('install-btn').addEventListener('click', doInstall);
 $('install-settings').addEventListener('click', doInstall);
 $('install-x').addEventListener('click', () => { save(K_INSTALL_DISMISSED, true); updateInstallUI(); toast('Puedes instalarla luego desde Ajustes'); });
 
+// ---------- Versión nueva ----------
+// sw.js activa la versión nueva en cuanto se instala (skipWaiting + clients.claim), pero esta
+// página sigue con el código que cargó: al cambiar de controlador avisamos para recargar.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  const sw = navigator.serviceWorker;
+  let hadController = !!sw.controller; // la primera instalación también cambia de controlador: no es una actualización
+  sw.addEventListener('controllerchange', () => {
+    if (hadController) $('update').hidden = false;
+    hadController = true;
+  });
+  window.addEventListener('load', () => sw.register('./sw.js').catch(() => {}));
+  // Al volver a la app, buscar versión nueva sin esperar a la revisión diaria del navegador
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) sw.getRegistration().then(r => r && r.update()).catch(() => {});
+  });
 }
+$('update-btn').addEventListener('click', () => location.reload());

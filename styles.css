@@ -296,7 +296,7 @@ body[data-view="today"] .seg.p.paid { background: repeating-linear-gradient(135d
 .install[hidden] { display: none; }
 .install span { flex: 1; }
 .install button { border: 0; border-radius: 12px; min-height: 44px; font-weight: 800; }
-#install-btn { background: #fff; color: var(--state); padding: 0 16px; font-size: 16px; }
+#install-btn, #update-btn { background: #fff; color: var(--state); padding: 0 16px; font-size: 16px; }
 #install-x { background: transparent; color: #fff; width: 44px; font-size: 18px; }
 
 /* Visor de días */
